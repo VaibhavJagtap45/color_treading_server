@@ -1,3 +1,4 @@
+import "dotenv/config"; // load .env before anything reads process.env
 import http from "http";
 import express from "express";
 import cors from "cors";

@@ -1,5 +1,6 @@
 import { getGameState, gameEvents, PAYOUTS } from "./gameEngine.js";
 import { verifyToken } from "./lib/jwt.js";
+import { isTokenRevoked } from "./lib/revocation.js";
 import { User } from "./models/User.js";
 import { Transaction } from "./models/Transaction.js";
 
@@ -19,11 +20,14 @@ const roundBets = new Map(); // userId -> [{ roundId, color, number, amount }]
  */
 export function attachGameSocket(io) {
   // --- Socket authentication: require a valid JWT in the handshake. ---
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error("Authentication required"));
     try {
       const payload = verifyToken(token);
+      if (await isTokenRevoked(payload.jti)) {
+        return next(new Error("Invalid or expired token"));
+      }
       socket.data.user = { id: payload.sub, username: payload.username, role: payload.role };
       next();
     } catch {

@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { User } from "../models/User.js";
 import { signToken } from "../lib/jwt.js";
+import { revokeToken } from "../lib/revocation.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 
 const router = Router();
@@ -52,6 +53,17 @@ router.get("/me", requireAuth, async (req, res) => {
   const user = await User.findById(req.user.id);
   if (!user) return res.status(404).json({ error: "User not found." });
   res.json({ user: user.toJSON() });
+});
+
+// Server-side logout: revoke the presented token so it can't be reused, even
+// before it would naturally expire.
+router.post("/logout", requireAuth, async (req, res) => {
+  try {
+    await revokeToken(req.token);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Logout failed." });
+  }
 });
 
 export default router;
