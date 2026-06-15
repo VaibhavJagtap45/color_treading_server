@@ -11,7 +11,9 @@ const userSchema = new mongoose.Schema(
       minlength: 3,
       maxlength: 24,
     },
-    passwordHash: { type: String, required: true },
+    // Auth is disabled; passwords are no longer collected or stored. Kept
+    // optional so any legacy records with a hash still load.
+    passwordHash: { type: String },
     role: { type: String, enum: ["user", "admin"], default: "user" },
     // The persistent wallet balance (virtual coins).
     balance: { type: Number, default: 1000, min: 0 },

@@ -1,8 +1,5 @@
 import { Router } from "express";
-import bcrypt from "bcryptjs";
 import { User } from "../models/User.js";
-import { signToken } from "../lib/jwt.js";
-import { revokeToken } from "../lib/revocation.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 
 const router = Router();
@@ -15,21 +12,23 @@ function cleanCredentials(body) {
   };
 }
 
+// Auth is disabled — any credentials are accepted. We find-or-create a user by
+// username so each name keeps its own persistent wallet. The returned "token"
+// is simply the user id, used to identify the session on later requests.
+async function findOrCreateUser(username) {
+  let user = await User.findOne({ username });
+  if (!user) user = await User.create({ username, balance: STARTING_BALANCE });
+  return user;
+}
+
 router.post("/register", async (req, res) => {
   try {
-    const { username, password } = cleanCredentials(req.body);
+    const { username } = cleanCredentials(req.body);
     if (username.length < 3)
       return res.status(400).json({ error: "Username must be at least 3 characters." });
-    if (password.length < 6)
-      return res.status(400).json({ error: "Password must be at least 6 characters." });
 
-    if (await User.findOne({ username }))
-      return res.status(409).json({ error: "Username is already taken." });
-
-    const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({ username, passwordHash, balance: STARTING_BALANCE });
-
-    res.status(201).json({ token: signToken(user), user: user.toJSON() });
+    const user = await findOrCreateUser(username);
+    res.status(201).json({ token: String(user.id), user: user.toJSON() });
   } catch {
     res.status(500).json({ error: "Registration failed." });
   }
@@ -37,13 +36,13 @@ router.post("/register", async (req, res) => {
 
 router.post("/login", async (req, res) => {
   try {
-    const { username, password } = cleanCredentials(req.body);
-    const user = await User.findOne({ username });
-    // Same response whether the user exists or not (avoid user enumeration).
-    if (!user || !(await bcrypt.compare(password, user.passwordHash)))
-      return res.status(401).json({ error: "Invalid username or password." });
+    const { username } = cleanCredentials(req.body);
+    if (username.length < 3)
+      return res.status(400).json({ error: "Username must be at least 3 characters." });
 
-    res.json({ token: signToken(user), user: user.toJSON() });
+    // No password check — anyone logs in with anything.
+    const user = await findOrCreateUser(username);
+    res.json({ token: String(user.id), user: user.toJSON() });
   } catch {
     res.status(500).json({ error: "Login failed." });
   }
@@ -55,15 +54,10 @@ router.get("/me", requireAuth, async (req, res) => {
   res.json({ user: user.toJSON() });
 });
 
-// Server-side logout: revoke the presented token so it can't be reused, even
-// before it would naturally expire.
+// Auth is disabled, so there's nothing to revoke — logout is effectively a
+// client-side action; the server just acknowledges it.
 router.post("/logout", requireAuth, async (req, res) => {
-  try {
-    await revokeToken(req.token);
-    res.json({ ok: true });
-  } catch {
-    res.status(500).json({ error: "Logout failed." });
-  }
+  res.json({ ok: true });
 });
 
 export default router;
