@@ -10,12 +10,18 @@ import authRoutes from "./routes/auth.js";
 import walletRoutes from "./routes/wallet.js";
 
 const PORT = process.env.PORT || 4000;
+// CLIENT_ORIGIN may be a single origin or a comma-separated list (e.g. the local
+// Vite dev server plus the deployed Vercel URL). Trailing slashes are stripped
+// so "https://app.vercel.app/" and "https://app.vercel.app" both match.
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+const ALLOWED_ORIGINS = CLIENT_ORIGIN.split(",")
+  .map((o) => o.trim().replace(/\/$/, ""))
+  .filter(Boolean);
 
 const app = express();
 
 // --- Middleware ---
-app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
+app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json());
 
 // --- REST routes ---
@@ -36,7 +42,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: CLIENT_ORIGIN,
+    origin: ALLOWED_ORIGINS,
     methods: ["GET", "POST"],
     credentials: true,
   },
