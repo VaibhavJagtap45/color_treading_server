@@ -58,12 +58,10 @@ app.use("/api/wallet", walletRoutes);
 // --- HTTP + Socket.IO server ---
 const server = http.createServer(app);
 
+// Reuse the same origin policy as the REST layer so Socket.IO accepts localhost
+// (any port) and *.vercel.app deployments without per-deploy env changes.
 const io = new Server(server, {
-  cors: {
-    origin: ALLOWED_ORIGINS,
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
+  cors: { ...corsOptions, methods: ["GET", "POST"] },
 });
 
 // Wire the DB-backed game socket layer (no auth — shared guest wallet).
