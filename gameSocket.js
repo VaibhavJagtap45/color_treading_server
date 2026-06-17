@@ -1,6 +1,7 @@
 import { getGameState, gameEvents, PAYOUTS } from "./gameEngine.js";
 import { User } from "./models/User.js";
 import { Transaction } from "./models/Transaction.js";
+import { getGuestUser } from "./lib/guestUser.js";
 
 const VALID_COLORS = ["red", "green", "violet"];
 
@@ -9,7 +10,7 @@ const VALID_COLORS = ["red", "green", "violet"];
 const roundBets = new Map(); // userId -> [{ roundId, color, number, amount }]
 
 /**
- * Wire the authenticated, DB-backed game socket layer.
+ * Wire the DB-backed game socket layer (no auth — shared guest wallet).
  *
  * The wallet is the persistent source of truth in MongoDB:
  *   - placeBet atomically debits the stake (guarded by sufficient balance)
@@ -17,19 +18,8 @@ const roundBets = new Map(); // userId -> [{ roundId, color, number, amount }]
  *   - every movement is written to the Transaction ledger
  */
 export function attachGameSocket(io) {
-  // --- Socket identification: the handshake "token" is just the user id. ---
-  io.use(async (socket, next) => {
-    const token = socket.handshake.auth?.token;
-    if (!token) return next(new Error("Authentication required"));
-    try {
-      const user = await User.findById(token);
-      if (!user) return next(new Error("Invalid session"));
-      socket.data.user = { id: String(user.id), username: user.username, role: user.role };
-      next();
-    } catch {
-      next(new Error("Invalid session"));
-    }
-  });
+  // Auth removed: no handshake token is required. Every connection plays as the
+  // shared guest wallet (resolved per-connection below).
 
   // --- Lightweight state broadcast every second. ---
   const broadcast = () => {
@@ -56,13 +46,21 @@ export function attachGameSocket(io) {
   gameEvents.on("roundStart", broadcast);
 
   io.on("connection", async (socket) => {
-    const { id: userId, username } = socket.data.user;
-    socket.join(`user:${userId}`); // all of a user's tabs share a room
-    console.log(`Socket connected: ${socket.id} (user ${username})`);
+    let guest;
+    try {
+      guest = await getGuestUser();
+    } catch (err) {
+      console.error("Failed to load guest user:", err);
+      socket.disconnect(true);
+      return;
+    }
+    const userId = String(guest.id);
+    socket.data.user = { id: userId, username: guest.username, role: guest.role };
+    socket.join(`user:${userId}`); // all tabs share the guest room
+    console.log(`Socket connected: ${socket.id} (guest)`);
 
     // Initial sync from the persistent wallet.
-    const user = await User.findById(userId).select("balance");
-    socket.emit("balanceUpdate", { balance: user?.balance ?? 0 });
+    socket.emit("balanceUpdate", { balance: guest.balance });
 
     const state = getGameState();
     socket.emit("gameState", {
